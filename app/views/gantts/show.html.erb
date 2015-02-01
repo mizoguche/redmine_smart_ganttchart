@@ -334,6 +334,7 @@
 <% end %>
 
 
+<% if zoom.to_i == 16 %>
 <%= javascript_tag do %>
 $(document).ready(function(){
 
@@ -401,3 +402,4 @@ $(document).ready(function(){
 </div>
 </div>
 </div>
+<% end %>
