@@ -364,15 +364,15 @@ $(document).ready(function(){
       });
   };
 
-  $('.task_todo')
-  .draggable({
-    axis: 'x',
-    containment: 'parent',
-    grid: [16, 0],
-    drag: dragging,
-    stop: dropped
-  })
-    .css({'z-index': 100})
+  $('.leaf.task_todo')
+    .draggable({
+      axis: 'x',
+      containment: 'parent',
+      grid: [16, 0],
+      drag: dragging,
+      stop: dropped
+    })
+    .css({'z-index': 100, 'cursor': 'move'})
     .each(function(index, elm){
       var nextObj = $(elm).next();
       nextObj.attr('originalLeft', parseInt(nextObj.css('left')));
