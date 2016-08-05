@@ -90,6 +90,7 @@
   headers_height = header_height
   show_weeks = false
   show_days  = false
+  show_day_numbers = false
 
   if @gantt.zoom > 1
     show_weeks = true
@@ -97,8 +98,13 @@
     if @gantt.zoom > 2
         show_days = true
         headers_height = 3 * header_height
+      if @gantt.zoom > 3
+        show_day_numbers = true
+        headers_height = (3.25 * header_height).to_i
+      end
     end
   end
+
 
   # Width of the entire chart
   g_width = ((@gantt.date_to - @gantt.date_from + 1) * zoom).to_i
@@ -238,7 +244,7 @@
     height = g_height + header_height - 1
     wday = @gantt.date_from.cwday
   %>
-  <% (@gantt.date_to - @gantt.date_from + 1).to_i.times do %>
+  <% (@gantt.date_from).upto(@gantt.date_to) do |day| %>
     <%
       width =  zoom - 1
       style  = ""
@@ -252,6 +258,10 @@
     %>
     <%= content_tag(:div, :style => style, :class => clss) do %>
       <%= day_letter(wday) %>
+      <% if show_day_numbers %>
+        <br />
+        <%= (day).mday %>
+      <% end %>
     <% end %>
     <%
       left = left + width + 1
@@ -333,8 +343,25 @@
   });
 <% end %>
 
-
 <% if zoom.to_i == 16 %>
+<%= javascript_tag do %>
+var scale_option = 16;
+<% end %>
+<% end %>
+
+<% if zoom.to_i == 8 %>
+<%= javascript_tag do %>
+var scale_option = 8;
+<% end %>
+<% end %>
+
+<% if zoom.to_i == 4 %>
+<%= javascript_tag do %>
+var scale_option = 4;
+<% end %>
+<% end %>
+
+<% if zoom.to_i >= 4 %>
 <%= javascript_tag do %>
 $(document).ready(function(){
 
@@ -343,21 +370,64 @@ $(document).ready(function(){
       return parseInt(deltaX);
   }
 
-  var dragging = function(event, obj){
-    var deltaX = calcDelta(obj);
-    var progressLabel = $(event.target).next();
-    var progressX = parseInt(progressLabel.attr('originalLeft')) + deltaX;
-    progressLabel.css('left', progressX);
+  var calcStartDelta = function(obj){
+      var startDeltaX = obj.position.left - obj.originalPosition.left;
+      if (0 < startDeltaX)
+          startDeltaX += 2;
+      return parseInt(startDeltaX);
+  }
+
+  var calcDueDelta = function(obj){
+      var dueDeltaX = obj.position.left + obj.size.width - (obj.originalPosition.left + obj.originalSize.width);
+      return parseInt(dueDeltaX);
+  }
+
+  var dragStart = function(event, obj){
+    var targetObject = $(event.target).next();
+	while(1)
+    {
+      targetObject.css({"display": "none"});
+	  if (targetObject.hasClass('task leaf label'))
+        break;
+      targetObject = targetObject.next();
+    }
   };
 
   var dropped = function(event, obj){
     $('#smart_ganttchart-loader').show();
     var match = $(this).attr('id').match(/task-todo-issue-(\d+)/);
-    var moved_days = calcDelta(obj) / 16;
+    var moved_s = Math.floor(calcDelta(obj) / scale_option);
+    var moved_e = Math.floor(calcDelta(obj) / scale_option);
     $.ajax({
         type: 'PUT',
         url: '<%= ganttchart_path %>',
-        data: { id: match[1],moved_days: moved_days },
+        data: { id: match[1],moved_s: moved_s,moved_e: moved_e },
+        success: function(data, text, jqXHR){ console.log('success')},
+        error: function(data, text, jqXHR){ console.log('error')},
+        complete: function(data, text, jqXHR){ console.log('complete'); location.reload(); }
+      });
+  };
+
+  var resizeStart = function(event, obj){
+    var targetObject = $(event.target).next();
+	while(1)
+    {
+      targetObject.css({"display": "none"});
+	  if (targetObject.hasClass('task leaf label'))
+        break;
+      targetObject = targetObject.next();
+    }
+  };
+
+  var resized = function(event, obj){
+    $('#smart_ganttchart-loader').show();
+    var match = $(this).attr('id').match(/task-todo-issue-(\d+)/);
+    var moved_s = Math.floor(calcStartDelta(obj) / scale_option);
+    var moved_e = Math.floor(calcDueDelta(obj) / scale_option);
+    $.ajax({
+        type: 'PUT',
+        url: '<%= ganttchart_path %>',
+        data: { id: match[1],moved_s: moved_s,moved_e: moved_e },
         success: function(data, text, jqXHR){ console.log('success')},
         error: function(data, text, jqXHR){ console.log('error')},
         complete: function(data, text, jqXHR){ console.log('complete'); location.reload(); }
@@ -368,14 +438,43 @@ $(document).ready(function(){
     .draggable({
       axis: 'x',
       containment: 'parent',
-      grid: [16, 0],
-      drag: dragging,
+      grid: [scale_option, 0],
+      start: dragStart,
       stop: dropped
     })
-    .css({'z-index': 100, 'cursor': 'move'})
+    .resizable({
+      handles: 'w, e',
+      containment: 'parent',
+      grid: [scale_option, 0],
+      start: resizeStart,
+      stop: resized
+    })
     .each(function(index, elm){
       var nextObj = $(elm).next();
       nextObj.attr('originalLeft', parseInt(nextObj.css('left')));
+    });
+
+  $('.leaf.task_todo').draggable( "disable" );
+  $('.leaf.task_todo').resizable( "disable" );
+
+  $(document)
+    .keydown(function(e){
+      if (e.keyCode == 17){ // Ctrl-key
+        $('.leaf.task_todo').css({'z-index': 100, 'cursor': 'move'});
+        $('.leaf.task_todo').draggable( "enable" );
+		$('.leaf.task_todo').resizable( "enable" );
+		$('.tooltip').css({"display": "none"});
+      }
+    });
+
+  $(document)
+    .keyup(function(e){
+      if (e.keyCode == 17){ // Ctrl-key
+        $('.leaf.task_todo').css({'z-index': 0, 'cursor': 'normal'});
+        $('.leaf.task_todo').draggable( "disable" );
+		$('.leaf.task_todo').resizable( "disable" );
+		$('.tooltip').css({"display": "block"});
+      }
     });
 
   $('#smart_ganttchart-loader').hide();
